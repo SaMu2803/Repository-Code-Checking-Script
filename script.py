@@ -1,43 +1,37 @@
+import customtkinter as ctk
 import requests
 import os
 
-# List of commonly used programming language extensions
-file_extensions = [
-    ".py", ".java", ".js", ".c", ".cpp", ".cc", ".cxx", ".cs", ".rb", ".php", 
-    ".go", ".swift", ".ts", ".kt", ".kts", ".rs", ".dart", ".pl", ".pm", 
-    ".r", ".scala", ".hs", ".m", ".mm", ".sh"
-]
-
-def search_github_for_code_without_reference(token, repository_path):
-    # GitHub API endpoint
+def search_github_for_code_without_reference(token, repository_path, snippet_length, result_textbox):
     github_search_api = "https://api.github.com/search/code"
+    file_extensions = [
+        ".py", ".java", ".js", ".c", ".cpp", ".cc", ".cxx", ".cs", ".rb", ".php", 
+        ".go", ".swift", ".ts", ".kt", ".kts", ".rs", ".dart", ".pl", ".pm", 
+        ".r", ".scala", ".hs", ".m", ".mm", ".sh"
+    ]
 
-    # Number of lines to use for each search snippet
-    snippet_length = int(input("Enter the number of lines to search for plagiarism (suggested: 5-20): "))
-
-    # Gather all code files from the repository
     repo_files = []
     for root, _, files in os.walk(repository_path):
         for file_name in files:
             if any(file_name.endswith(ext) for ext in file_extensions):
                 repo_files.append(os.path.join(root, file_name))
 
-    # Iterate over each file to extract snippets and search GitHub
     headers = {"Authorization": f"token {token}"}
-    match_found = False
+    total_copied_lines = 0
+
+    result_textbox.delete("1.0", ctk.END)  # Clear the result box before showing new results
 
     for file_path in repo_files:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
 
-        # Search in chunks to avoid too long snippets
+        copied_lines_count = 0
         for i in range(len(lines) - snippet_length + 1):
             snippet = "".join(lines[i:i + snippet_length])
 
-            # Search GitHub for this snippet
             params = {
                 "q": f'"{snippet.strip()}" in:file',
-                "per_page": 5  # Limit results to avoid too many API calls
+                "per_page": 5
             }
 
             response = requests.get(github_search_api, headers=headers, params=params)
@@ -47,21 +41,73 @@ def search_github_for_code_without_reference(token, repository_path):
                 total_matches = search_results.get('total_count', 0)
                 
                 if total_matches > 0:
-                    match_found = True
-                    print(f"Match found for {file_path}:")
+                    copied_lines_count += snippet_length
+                    result_textbox.insert(ctk.END, f"\nMatch found for {file_path}:\n", "match")
                     for item in search_results.get('items', []):
                         file_url = item['html_url']
-                        print(f"- {file_url}")
+                        result_textbox.insert(ctk.END, f"- {file_url}\n", "match")
                 else:
-                    print(f"Match not found for snippet from {file_path}")
+                    result_textbox.insert(ctk.END, f"Match not found for snippet from {file_path}\n", "no_match")
             else:
-                print(f"Error: {response.status_code} - {response.text}")
+                result_textbox.insert(ctk.END, f"Error: {response.status_code} - {response.text}\n", "error")
 
-    if not match_found:
-        print("Match not found in any file.")
+        total_copied_lines += copied_lines_count
 
-# User input for GitHub token and repository path
-github_token = input("Enter your GitHub Personal Access Token: ").strip()
-repository_path = input("Enter the path of the repository to check: ").strip()
+    if total_copied_lines > 0:
+        result_textbox.insert(ctk.END, f"\nTotal copied lines found: {total_copied_lines}\n", "match")
+    else:
+        result_textbox.insert(ctk.END, "Match not found in any file.\n", "no_match")
 
-search_github_for_code_without_reference(github_token, repository_path)
+def start_check():
+    try:
+        token = token_entry.get().strip()
+        repo_path = repo_path_entry.get().strip()
+        snippet_length = int(snippet_length_entry.get().strip())
+        search_github_for_code_without_reference(token, repo_path, snippet_length, result_textbox)
+    except ValueError:
+        result_textbox.insert(ctk.END, "Please enter a valid number for lines to check.\n", "error")
+
+app = ctk.CTk()
+app.geometry("700x700")
+app.title("Non-AI-Based Plagiarism Detection")
+
+# Use a built-in theme and manually configure colors
+ctk.set_appearance_mode("light")
+ctk.set_default_color_theme("blue")  # Use a default theme
+
+app.configure(bg="#f8bbd0")  # Pastel pink background
+
+# Styling for widgets
+label_font = ("Arial", 14)
+entry_font = ("Arial", 12)
+button_font = ("Arial", 14, "bold")
+result_textbox_font = ("Arial", 12)
+
+# Creating labels and entry fields
+token_label = ctk.CTkLabel(app, text="GitHub Personal Access Token:", font=label_font)
+token_label.pack(pady=5)
+token_entry = ctk.CTkEntry(app, width=400, font=entry_font)
+token_entry.pack()
+
+repo_path_label = ctk.CTkLabel(app, text="Repository Path:", font=label_font)
+repo_path_label.pack(pady=5)
+repo_path_entry = ctk.CTkEntry(app, width=400, font=entry_font)
+repo_path_entry.pack()
+
+snippet_length_label = ctk.CTkLabel(app, text="Number of Lines to Check:", font=label_font)
+snippet_length_label.pack(pady=5)
+snippet_length_entry = ctk.CTkEntry(app, width=50, font=entry_font)
+snippet_length_entry.pack()
+
+check_button = ctk.CTkButton(app, text="Check for Plagiarism", font=button_font, command=start_check, fg_color="#f48fb1", hover_color="#f06292")
+check_button.pack(pady=10)
+
+result_textbox = ctk.CTkTextbox(app, width=600, height=300, font=result_textbox_font)
+result_textbox.pack(pady=10)
+
+# Tagging setup for the result text box
+result_textbox.tag_config("match", foreground="#388e3c")
+result_textbox.tag_config("no_match", foreground="#d32f2f")
+result_textbox.tag_config("error", foreground="#f57c00")
+
+app.mainloop()
